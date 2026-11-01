@@ -1,0 +1,14 @@
+node_modules
+.next
+.env
+.mail-encryption.env
+coverage
+uploads/
+/backend/data/
+*.log
+*.tsbuildinfo
+/backend/api
+./vscode/
+.DS_Store
+./reference/
+./.vscode/

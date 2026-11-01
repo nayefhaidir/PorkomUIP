@@ -1,0 +1,2 @@
+ALTER TABLE "Meeting"
+ADD COLUMN "isConfidential" BOOLEAN NOT NULL DEFAULT false;

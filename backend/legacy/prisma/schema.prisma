@@ -1,0 +1,364 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  APPROVER
+  ORGANIZER
+  PARTICIPANT
+}
+
+enum MeetingStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  REJECTED
+  CANCELLED
+  COMPLETED
+}
+
+enum RoomKind {
+  PHYSICAL
+  ONLINE
+}
+
+enum OnlinePlatform {
+  ZOOM
+  TEAMS
+}
+
+enum MeetingMethod {
+  OFFLINE
+  ONLINE
+  HYBRID
+}
+
+enum GuestCategory {
+  REGULAR
+  VIP
+}
+
+enum MeetingRequirementType {
+  MIC
+  MC
+  DOCUMENTATION
+  PRESS_RELEASE
+  PROJECTOR
+  WHITEBOARD
+  OTHER
+  BACKDROP_BANNER
+  EXTRA_CHAIRS
+}
+
+enum ConsumptionType {
+  SNACK_BOX
+  RICE_BOX
+  COFFEE_BREAK
+  LUNCH
+  OTHER
+  BREAKFAST
+  MORNING_SNACK
+  AFTERNOON_SNACK
+  VIP_FRUIT
+}
+
+enum DocumentType {
+  SUPPORTING
+  DOCUMENTATION
+  MINUTES
+  ATTENDANCE_LIST
+}
+
+enum AnnouncementType {
+  GENERAL
+  MANAGEMENT_TALK
+  UIP_NEWS
+}
+
+enum ApprovalDecision {
+  APPROVED
+  REJECTED
+}
+
+model User {
+  id                String            @id @default(cuid())
+  name              String
+  email             String            @unique
+  passwordHash      String
+  role              Role              @default(PARTICIPANT)
+  jobTitle          String?
+  pageAccess        String[]          @default([])
+  isActive          Boolean           @default(true)
+  departmentId      String?
+  department        Department?       @relation(fields: [departmentId], references: [id])
+  createdMeetings   Meeting[]         @relation("Organizer")
+  attendances       Attendance[]
+  notifications     Notification[]
+  sessions          Session[]
+  auditLogs         AuditLog[]
+  approvals         MeetingApproval[]
+  uploadedDocuments Document[]
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @default(now()) @updatedAt
+}
+
+model Department {
+  id        String    @id @default(cuid())
+  name      String    @unique
+  shortName String    @unique
+  color     String    @default("#2563EB")
+  users     User[]
+  meetings  Meeting[]
+}
+
+model Room {
+  id             String          @id @default(cuid())
+  name           String
+  description    String?
+  kind           RoomKind        @default(PHYSICAL)
+  onlinePlatform OnlinePlatform?
+  capacity       Int
+  location       String?
+  facilities     String[]
+  breakoutRooms  Int             @default(0)
+  imageUrl       String?
+  active         Boolean         @default(true)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @default(now()) @updatedAt
+  meetings       Meeting[]       @relation("PhysicalRoom")
+  onlineMeetings Meeting[]       @relation("OnlineResource")
+  zoomBreakoutRooms ZoomBreakoutRoom[]
+
+  @@index([kind, active])
+}
+
+model Meeting {
+  id                     String               @id @default(cuid())
+  meetingNumber          String               @unique @default(cuid())
+  title                  String
+  description            String?
+  startAt                DateTime
+  endAt                  DateTime
+  status                 MeetingStatus        @default(DRAFT)
+  method                 MeetingMethod        @default(OFFLINE)
+  isConfidential         Boolean              @default(false)
+  guestCategory          GuestCategory        @default(REGULAR)
+  timezone               String               @default("Asia/Jakarta")
+  organizerId            String
+  organizer              User                 @relation("Organizer", fields: [organizerId], references: [id])
+  departmentId           String
+  department             Department           @relation(fields: [departmentId], references: [id])
+  roomId                 String?
+  room                   Room?                @relation("PhysicalRoom", fields: [roomId], references: [id])
+  onlineResourceId       String?
+  onlineResource         Room?                @relation("OnlineResource", fields: [onlineResourceId], references: [id], onDelete: SetNull)
+  breakoutRoomCount      Int                  @default(0)
+  onlineUrl              String?
+  externalLocation       String?
+  notes                  String?
+  catering               String?
+  expectedParticipants   Int                  @default(1)
+  reviewedById           String?
+  reviewedAt             DateTime?
+  rejectionReason        String?
+  submittedAt            DateTime?
+  approvedAt             DateTime?
+  cancelledAt            DateTime?
+  evidenceReminderSentAt DateTime?
+  createdAt              DateTime             @default(now())
+  updatedAt              DateTime             @default(now()) @updatedAt
+  attendances            Attendance[]
+  guests                 MeetingGuest[]
+  documents              Document[]
+  requirements           MeetingRequirement[]
+  consumptions           MeetingConsumption[]
+  approvals              MeetingApproval[]
+  breakoutRooms          BreakoutRoom[]
+  zoomBreakoutBookings   MeetingZoomBreakoutBooking[]
+
+  @@index([startAt, endAt, status])
+  @@index([departmentId, startAt])
+  @@index([status, endAt])
+}
+
+model Attendance {
+  id        String  @id @default(cuid())
+  meetingId String
+  userId    String
+  meeting   Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([meetingId, userId])
+}
+
+model MeetingGuest {
+  id           String  @id @default(cuid())
+  meetingId    String
+  name         String
+  email        String?
+  organization String?
+  meeting      Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+
+  @@index([meetingId, name])
+}
+
+model MeetingRequirement {
+  id        String                 @id @default(cuid())
+  meetingId String
+  type      MeetingRequirementType
+  detail    String?
+  meeting   Meeting                @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+
+  @@unique([meetingId, type])
+}
+
+model MeetingConsumption {
+  id        String          @id @default(cuid())
+  meetingId String
+  itemType  ConsumptionType
+  quantity  Int
+  unit      String          @default("box")
+  meeting   Meeting         @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+
+  @@unique([meetingId, itemType])
+  @@index([itemType, meetingId])
+}
+
+model BreakoutRoom {
+  id        String  @id @default(cuid())
+  meetingId String
+  name      String
+  capacity  Int
+  meeting   Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+
+  @@unique([meetingId, name])
+}
+
+model ZoomBreakoutRoom {
+  id                 String                           @id @default(cuid())
+  resourceId         String
+  name               String
+  capacity           Int                              @default(30)
+  active             Boolean                          @default(true)
+  resource           Room                             @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  bookings           MeetingZoomBreakoutBooking[]
+
+  @@unique([resourceId, name])
+  @@index([resourceId, active])
+}
+
+model MeetingZoomBreakoutBooking {
+  meetingId       String
+  breakoutRoomId  String
+  meeting         Meeting          @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  breakoutRoom    ZoomBreakoutRoom @relation(fields: [breakoutRoomId], references: [id], onDelete: Restrict)
+  createdAt       DateTime         @default(now())
+
+  @@id([meetingId, breakoutRoomId])
+  @@index([breakoutRoomId, meetingId])
+}
+
+model MeetingApproval {
+  id         String           @id @default(cuid())
+  meetingId  String
+  approverId String
+  decision   ApprovalDecision
+  comment    String?
+  decidedAt  DateTime         @default(now())
+  meeting    Meeting          @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  approver   User             @relation(fields: [approverId], references: [id], onDelete: Restrict)
+
+  @@index([meetingId, decidedAt])
+}
+
+model Document {
+  id           String       @id @default(cuid())
+  meetingId    String
+  meeting      Meeting      @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  filename     String
+  documentType DocumentType @default(SUPPORTING)
+  storageKey   String       @unique
+  mimeType     String
+  size         Int
+  uploadedById String?
+  uploadedBy   User?        @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+  createdAt    DateTime     @default(now())
+}
+
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  body      String
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, readAt])
+}
+
+model Session {
+  id        String    @id
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+}
+
+model Announcement {
+  id          String    @id @default(cuid())
+  type        AnnouncementType @default(GENERAL)
+  title       String
+  body        String
+  imageStorageKey String?
+  imageMimeType String?
+  publishedAt DateTime  @default(now())
+  expiresAt   DateTime?
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  action    String
+  entity    String
+  entityId  String
+  details   Json?
+  createdAt DateTime @default(now())
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([entity, entityId, createdAt])
+}
+
+model SystemSetting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @default(now()) @updatedAt
+}
+
+model EmailOutbox {
+  id          String    @id @default(cuid())
+  eventKey    String    @unique
+  recipient   String
+  subject     String
+  textBody    String
+  htmlBody    String
+  status      String    @default("PENDING")
+  attempts    Int       @default(0)
+  lastError   String?
+  availableAt DateTime  @default(now())
+  sentAt      DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @default(now()) @updatedAt
+
+  @@index([status, availableAt])
+}

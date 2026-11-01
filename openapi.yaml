@@ -1,0 +1,319 @@
+openapi: 3.0.3
+info:
+  title: UIP Meeting Portal API
+  version: 1.0.0
+  description: REST API untuk autentikasi, jadwal, ruangan, workflow, dokumen, dan laporan UIP Meeting Portal.
+servers:
+  - url: http://localhost:3000
+security:
+  - sessionCookie: []
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: uip_session
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
+        details: { type: object }
+    MeetingInput:
+      type: object
+      required: [title, startAt, endAt, expectedParticipants]
+      properties:
+        title: { type: string, minLength: 3, maxLength: 180 }
+        description: { type: string, maxLength: 5000 }
+        startAt: { type: string, format: date-time }
+        endAt: { type: string, format: date-time }
+        departmentId: { type: string }
+        roomId: { type: string, nullable: true }
+        method: { type: string, enum: [OFFLINE, ONLINE, HYBRID] }
+        guestCategory: { type: string, enum: [REGULAR, VIP] }
+        onlineResourceId: { type: string, nullable: true }
+        onlineUrl: { type: string, format: uri, nullable: true }
+        breakoutRoomCount: { type: integer, minimum: 0, maximum: 50 }
+        attendeeIds: { type: array, maxItems: 200, items: { type: string } }
+        expectedParticipants: { type: integer, minimum: 1, maximum: 1000 }
+        catering: { type: string, maxLength: 500 }
+        requirements:
+          type: array
+          maxItems: 7
+          items:
+            type: object
+            required: [type]
+            properties:
+              type: { type: string, enum: [MIC, MC, DOCUMENTATION, PRESS_RELEASE, PROJECTOR, WHITEBOARD, OTHER] }
+              detail: { type: string, maxLength: 300 }
+        consumptions:
+          type: array
+          maxItems: 5
+          items:
+            type: object
+            required: [itemType, quantity]
+            properties:
+              itemType: { type: string, enum: [SNACK_BOX, RICE_BOX, COFFEE_BREAK, LUNCH, OTHER] }
+              quantity: { type: integer, minimum: 0, maximum: 1000 }
+    MeetingStatus:
+      type: string
+      enum: [DRAFT, SUBMITTED, APPROVED, REJECTED, CANCELLED, COMPLETED]
+  responses:
+    Unauthorized:
+      description: Session tidak ada, kedaluwarsa, atau dicabut
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Conflict:
+      description: Konflik jadwal, status, atau constraint database
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+paths:
+  /api/health:
+    get:
+      security: []
+      summary: Cek aplikasi dan koneksi database
+      responses:
+        '200': { description: Aplikasi dan database aktif }
+        '503': { description: Database tidak tersedia }
+  /api/auth/login:
+    post:
+      security: []
+      summary: Login email dan password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, minLength: 1 }
+      responses:
+        '200': { description: Session cookie HttpOnly dibuat }
+        '400': { description: Payload tidak valid }
+        '401': { description: Kredensial salah }
+  /api/auth/logout:
+    post:
+      summary: Cabut session aktif dan hapus cookie
+      responses:
+        '200': { description: Session dicabut }
+  /api/auth/me:
+    get:
+      summary: Profil session aktif
+      responses:
+        '200': { description: Profil pengguna }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    patch:
+      summary: Ubah nama atau kata sandi sendiri
+      responses:
+        '200': { description: Profil diperbarui }
+        '400': { description: Payload tidak valid }
+        '403': { description: Kata sandi lama salah }
+  /api/meetings:
+    get:
+      summary: Cari rapat dengan filter dan paginasi
+      parameters:
+        - { in: query, name: q, schema: { type: string }, description: Cari judul, deskripsi, bidang, atau ruangan }
+        - { in: query, name: from, schema: { type: string, format: date-time } }
+        - { in: query, name: to, schema: { type: string, format: date-time } }
+        - { in: query, name: status, schema: { $ref: '#/components/schemas/MeetingStatus' } }
+        - { in: query, name: departmentId, schema: { type: string } }
+        - { in: query, name: page, schema: { type: integer, minimum: 1, default: 1 } }
+        - { in: query, name: pageSize, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      responses:
+        '200': { description: Halaman hasil rapat }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      summary: Ajukan rapat. Pemeriksaan bentrok dilakukan secara atomik untuk database yang dikonfigurasi.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MeetingInput' }
+      responses:
+        '201': { description: Rapat tersimpan dengan status SUBMITTED }
+        '400': { description: Input atau rentang waktu tidak valid }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/meetings/{id}:
+    parameters:
+      - { in: path, name: id, required: true, schema: { type: string } }
+    get:
+      summary: Detail rapat, peserta, dan dokumen
+      responses:
+        '200': { description: Detail rapat }
+        '404': { description: Rapat tidak ditemukan }
+    patch:
+      summary: Ubah rapat oleh penyelenggara, approver, atau admin
+      responses:
+        '200': { description: Rapat diperbarui }
+        '403': { description: Tidak berwenang }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/meetings/{id}/workflow:
+    post:
+      summary: Approve, reject, atau cancel. Approve/reject memerlukan role APPROVER atau ADMIN.
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - { type: object, required: [action], properties: { action: { type: string, enum: [approve] } } }
+                - { type: object, required: [action, reason], properties: { action: { type: string, enum: [reject] }, reason: { type: string, minLength: 3 } } }
+                - { type: object, required: [action], properties: { action: { type: string, enum: [cancel] }, reason: { type: string } } }
+      responses:
+        '200': { description: Status berubah dan notifikasi/audit tersimpan }
+        '403': { description: Role tidak mencukupi }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/meetings/{id}/documents:
+    post:
+      summary: Unggah PDF, PNG, JPG, DOCX, atau XLSX (maksimal 10 MiB)
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        '201': { description: Metadata tersimpan; file berada di storage lokal persisten }
+        '403': { description: Tidak berwenang }
+        '413': { description: File terlalu besar }
+  /api/documents/{id}:
+    get:
+      summary: Unduh dokumen dengan session terautentikasi
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+      responses:
+        '200': { description: File attachment }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { description: Dokumen tidak ditemukan }
+  /api/availability:
+    get:
+      summary: Cari ketersediaan ruang dalam interval [from, to)
+      parameters:
+        - { in: query, name: from, required: true, schema: { type: string, format: date-time } }
+        - { in: query, name: to, required: true, schema: { type: string, format: date-time } }
+        - { in: query, name: kind, schema: { type: string, enum: [PHYSICAL, ONLINE] } }
+        - { in: query, name: minCapacity, schema: { type: integer, minimum: 1 } }
+      responses:
+        '200': { description: Daftar ruang, status availability, dan booking yang tumpang tindih }
+        '400': { description: Interval tidak valid atau lebih dari 90 hari }
+  /api/rooms:
+    get:
+      summary: Cari ruangan dengan filter dan paginasi
+      responses:
+        '200': { description: Halaman ruangan }
+    post:
+      summary: Buat ruangan (ADMIN)
+      responses:
+        '201': { description: Ruangan dibuat }
+        '403': { description: Role tidak mencukupi }
+  /api/rooms/{id}:
+    parameters:
+      - { in: path, name: id, required: true, schema: { type: string } }
+    patch:
+      summary: Ubah ruangan (ADMIN)
+      responses:
+        '200': { description: Ruangan diperbarui }
+        '403': { description: Role tidak mencukupi }
+    delete:
+      summary: Hapus ruangan tanpa rapat aktif (ADMIN)
+      responses:
+        '200': { description: Ruangan dihapus }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/departments:
+    get:
+      summary: Daftar bidang
+      responses:
+        '200': { description: Daftar bidang dan jumlah pengguna/rapat }
+    post:
+      summary: Buat bidang (ADMIN)
+      responses:
+        '201': { description: Bidang dibuat }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/departments/{id}:
+    parameters:
+      - { in: path, name: id, required: true, schema: { type: string } }
+    patch:
+      summary: Ubah bidang (ADMIN)
+      responses:
+        '200': { description: Bidang diperbarui }
+    delete:
+      summary: Hapus bidang yang belum dipakai (ADMIN)
+      responses:
+        '200': { description: Bidang dihapus }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/users:
+    get:
+      summary: Cari pengguna untuk undangan dengan paginasi
+      responses:
+        '200': { description: Halaman pengguna }
+    post:
+      summary: Buat pengguna dengan password hash (ADMIN)
+      responses:
+        '201': { description: Pengguna dibuat }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/users/{id}:
+    parameters:
+      - { in: path, name: id, required: true, schema: { type: string } }
+    patch:
+      summary: Ubah pengguna atau peran (ADMIN)
+      responses:
+        '200': { description: Pengguna diperbarui }
+    delete:
+      summary: Hapus pengguna tanpa rapat yang dibuat (ADMIN)
+      responses:
+        '200': { description: Pengguna dihapus }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/notifications:
+    get:
+      summary: Daftar notifikasi milik session aktif
+      responses:
+        '200': { description: Notifikasi terpaginasikan dan jumlah belum dibaca }
+    patch:
+      summary: Tandai notifikasi sebagai dibaca
+      responses:
+        '200': { description: Jumlah notifikasi diperbarui }
+  /api/announcements:
+    get:
+      summary: Daftar pengumuman aktif
+      responses:
+        '200': { description: Pengumuman }
+    post:
+      summary: Buat pengumuman (ADMIN)
+      responses:
+        '201': { description: Pengumuman dibuat }
+  /api/reports/monthly:
+    get:
+      summary: Agregasi laporan bulanan dari database
+      parameters:
+        - { in: query, name: month, required: true, schema: { type: string, pattern: '^\\d{4}-\\d{2}$' } }
+        - { in: query, name: departmentId, schema: { type: string } }
+      responses:
+        '200': { description: Total, durasi, peserta, dokumentasi, notulensi, per status/bidang, dan data tabel }
+  /api/reports/monthly/export:
+    get:
+      summary: Unduh laporan bulanan CSV, XLSX, atau PDF
+      parameters:
+        - { in: query, name: month, required: true, schema: { type: string, pattern: '^\\d{4}-\\d{2}$' } }
+        - { in: query, name: format, required: true, schema: { type: string, enum: [csv, xlsx, pdf] } }
+        - { in: query, name: departmentId, schema: { type: string } }
+      responses:
+        '200': { description: File laporan }
+  /api/audit-logs:
+    get:
+      summary: Daftar audit log terpaginasikan (ADMIN)
+      responses:
+        '200': { description: Riwayat aksi pengguna }
+        '403': { description: Role tidak mencukupi }

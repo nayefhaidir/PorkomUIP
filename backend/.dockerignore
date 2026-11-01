@@ -1,0 +1,5 @@
+.git
+*.db
+data/
+uploads/
+legacy/

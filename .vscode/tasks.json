@@ -1,0 +1,40 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "UIP Portal Visual QA",
+			"type": "shell",
+			"command": "npm run dev",
+			"isBackground": true,
+			"problemMatcher": []
+		},
+		{
+			"label": "UIP Portal Visual QA Configured",
+			"type": "shell",
+			"command": "DATABASE_URL='postgresql://uip:uip_dev_password@localhost:5432/uip_meeting?schema=public' AUTH_SECRET='visual-qa-local-secret-at-least-32-characters-long' npm run dev -- --port 3001",
+			"isBackground": true,
+			"problemMatcher": []
+		},
+		{
+			"label": "UIP Portal Visual QA Final",
+			"type": "shell",
+			"command": "DATABASE_URL='postgresql://uip:uip_dev_password@localhost:5432/uip_meeting?schema=public' AUTH_SECRET='visual-qa-local-secret-at-least-32-characters-long' npm run start -- --port 3001",
+			"isBackground": true,
+			"problemMatcher": []
+		},
+		{
+			"label": "UIP Portal Responsive QA",
+			"type": "shell",
+			"command": "DATABASE_URL='postgresql://uip:uip_dev_password@localhost:5432/uip_meeting?schema=public' AUTH_SECRET='visual-qa-local-secret-at-least-32-characters-long' npm run dev -- --port 3002",
+			"isBackground": true,
+			"problemMatcher": []
+		},
+		{
+			"label": "UIP API Smoke Test Server",
+			"type": "shell",
+			"command": "DATABASE_URL='postgresql://uip:uip_dev_password@localhost:5432/uip_meeting_test?schema=public' AUTH_SECRET='visual-qa-local-secret-at-least-32-characters-long' npm run start -- --port 3003",
+			"isBackground": true,
+			"problemMatcher": []
+		}
+	]
+}

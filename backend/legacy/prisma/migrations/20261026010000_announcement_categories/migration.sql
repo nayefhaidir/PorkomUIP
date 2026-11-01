@@ -1,0 +1,2 @@
+CREATE TYPE "AnnouncementType" AS ENUM ('GENERAL', 'MANAGEMENT_TALK', 'UIP_NEWS');
+ALTER TABLE "Announcement" ADD COLUMN "type" "AnnouncementType" NOT NULL DEFAULT 'GENERAL';

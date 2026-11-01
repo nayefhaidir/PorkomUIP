@@ -1,0 +1,66 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: uip_meeting
+      POSTGRES_USER: uip
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    ports: ["127.0.0.1:5432:5432"]
+    volumes: ["postgres_data:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U uip -d uip_meeting"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    env_file:
+      - ./.mail-encryption.env
+    ports: ["127.0.0.1:8080:8080"]
+    environment:
+      DATABASE_URL: ${DATABASE_URL_DOCKER:?Set DATABASE_URL_DOCKER in .env}
+      AUTH_SECRET: ${AUTH_SECRET:?Set AUTH_SECRET in .env}
+      DEMO_PASSWORD: ${DEMO_PASSWORD:-}
+      PUBLIC_APP_URL: ${PUBLIC_APP_URL:-}
+      SMTP_ALLOW_PRIVATE_NETWORK: ${SMTP_ALLOW_PRIVATE_NETWORK:-false}
+      UPLOAD_DIR: /data/uploads
+      PORT: 8080
+    volumes:
+      - backend_data:/data
+      - ./uploads:/data/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+  app:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        GO_API_URL: http://api:8080
+    environment:
+      HOSTNAME: 0.0.0.0
+      GO_API_URL: http://api:8080
+      PORT: 3000
+    ports: ["3000:3000"]
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+volumes:
+  postgres_data:
+  backend_data:
